@@ -1151,12 +1151,112 @@ function yokogawa_OSA_GUI
 
     %% 保存数据
     function chooseOutputFolder(~, ~)
-        selected_folder = uigetdir(output_folder_field.Value, '选择 OSA 数据保存目录');
-        if isequal(selected_folder, 0)
-            return;
+        % 在保存面板原位浏览目录，避免系统模态对话框改变窗口焦点。
+        current_folder = strtrim(output_folder_field.Value);
+        if ~isfolder(current_folder)
+            current_folder = script_folder;
         end
-        output_folder_field.Value = selected_folder;
-        persistentSettingChanged();
+        picker = uipanel(controls_grid, 'Title', '选择 OSA 数据保存目录', ...
+            'FontWeight', 'bold', 'Tag', 'OutputFolderPicker', 'Visible', 'off');
+        picker.Layout.Row = save_panel.Layout.Row;
+        picker.Layout.Column = save_panel.Layout.Column;
+        picker_grid = uigridlayout(picker, [4, 4]);
+        picker_grid.RowHeight = {30, '1x', 30, 28};
+        picker_grid.ColumnWidth = {'1x', '1x', '1x', '1x'};
+        picker_grid.Padding = [8, 6, 8, 6];
+        picker_grid.RowSpacing = 4;
+        picker_grid.ColumnSpacing = 4;
+        path_field = uieditfield(picker_grid, 'text', 'Value', current_folder, ...
+            'Tag', 'FolderPickerPath', 'ValueChangedFcn', @enterFolderPath);
+        path_field.Layout.Row = 1;
+        path_field.Layout.Column = [1, 4];
+        folder_list = uilistbox(picker_grid, 'Items', {}, ...
+            'Tag', 'FolderPickerList');
+        folder_list.Layout.Row = 2;
+        folder_list.Layout.Column = [1, 4];
+        up_button = uibutton(picker_grid, 'Text', '上一级', ...
+            'ButtonPushedFcn', @goUpFolder);
+        up_button.Layout.Row = 3;
+        up_button.Layout.Column = 1;
+        open_button = uibutton(picker_grid, 'Text', '打开子目录', ...
+            'ButtonPushedFcn', @openChildFolder);
+        open_button.Layout.Row = 3;
+        open_button.Layout.Column = 2;
+        select_button = uibutton(picker_grid, 'Text', '选择当前目录', ...
+            'ButtonPushedFcn', @acceptFolder);
+        select_button.Layout.Row = 3;
+        select_button.Layout.Column = 3;
+        cancel_button = uibutton(picker_grid, 'Text', '取消', ...
+            'ButtonPushedFcn', @closeFolderPicker);
+        cancel_button.Layout.Row = 3;
+        cancel_button.Layout.Column = 4;
+        picker_message = uilabel(picker_grid, ...
+            'Text', '选中子目录后点“打开子目录”；也可输入完整路径。', ...
+            'FontColor', [0.35, 0.35, 0.35]);
+        picker_message.Layout.Row = 4;
+        picker_message.Layout.Column = [1, 4];
+        showFolder(current_folder);
+        save_panel.Visible = 'off';
+        picker.Visible = 'on';
+
+        function loaded = showFolder(folder)
+            loaded = false;
+            try
+                if ~isfolder(folder)
+                    error('目录不存在，请输入有效路径。');
+                end
+                % fileattrib 取得绝对路径，使相对输入及上一级导航保持一致。
+                [ok, attributes] = fileattrib(folder);
+                if ~ok
+                    error('无法访问该目录。');
+                end
+                folder = attributes.Name;
+                entries = dir(folder);
+                names = {entries([entries.isdir]).name};
+                names = sort(names(~ismember(names, {'.', '..'})));
+                folder_list.Items = names;
+                current_folder = folder;
+                path_field.Value = folder;
+                open_button.Enable = onOff(~isempty(names));
+                up_button.Enable = onOff(~isempty(fileparts(folder)));
+                picker_message.Text = '选中子目录后点“打开子目录”；也可输入完整路径。';
+                loaded = true;
+            catch exception
+                path_field.Value = current_folder;
+                picker_message.Text = exception.message;
+            end
+        end
+
+        function enterFolderPath(~, ~)
+            showFolder(strtrim(path_field.Value));
+        end
+
+        function goUpFolder(~, ~)
+            parent_folder = fileparts(current_folder);
+            if ~isempty(parent_folder)
+                showFolder(parent_folder);
+            end
+        end
+
+        function openChildFolder(~, ~)
+            if ~isempty(folder_list.Value)
+                showFolder(fullfile(current_folder, folder_list.Value));
+            end
+        end
+
+        function acceptFolder(~, ~)
+            if ~showFolder(strtrim(path_field.Value))
+                return;
+            end
+            output_folder_field.Value = current_folder;
+            persistentSettingChanged();
+            closeFolderPicker();
+        end
+
+        function closeFolderPicker(varargin)
+            delete(picker);
+            save_panel.Visible = 'on';
+        end
     end
 
     function saveCurrentData(~, ~)
